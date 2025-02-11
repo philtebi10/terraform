@@ -160,17 +160,32 @@ resource "aws_iam_role" "tera_node_group_role" {
 EOF
 }
 
-resource "aws_iam_role_policy_attachment" "tera_node_group_role_policy" {
-  role       = aws_iam_role.tera_node_group_role.name
+resource "aws_iam_role_policy_attachment" "eks_admin_role_admin" {
+  role       = "Teraform_EKS"
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_admin_role_cluster" {
+  role       = "Teraform_EKS"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_admin_role_service" {
+  role       = "Teraform_EKS"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_admin_role_worker" {
+  role       = "Teraform_EKS"
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
-resource "aws_iam_role_policy_attachment" "tera_node_group_cni_policy" {
-  role       = aws_iam_role.tera_node_group_role.name
+resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
+  role       = "Teraform_EKS"
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
-resource "aws_iam_role_policy_attachment" "tera_node_group_registry_policy" {
-  role       = aws_iam_role.tera_node_group_role.name
+resource "aws_iam_role_policy_attachment" "eks_registry_policy" {
+  role       = "Teraform_EKS"
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
