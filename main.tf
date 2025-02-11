@@ -6,7 +6,7 @@ resource "aws_vpc" "tera_vpc" {
   cidr_block = "10.0.0.0/16"
 
   tags = {
-    Name = "terraform_prod-vpc"
+    Name          = "terraform_prod-vpc"
     terraform_vpc = "true"
   }
 }
@@ -60,6 +60,13 @@ resource "aws_security_group" "tera_cluster_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = {
     Name = "tera-cluster-sg"
   }
@@ -89,7 +96,7 @@ resource "aws_security_group" "tera_node_sg" {
 
 resource "aws_eks_cluster" "tera_cluster" {
   name     = "tera-cluster"
-  role_arn = aws_iam_role.tera_cluster_role.arn
+  role_arn = "arn:aws:iam::701501441062:role/Teraform_EKS"  # Explicitly referencing your manually created role
 
   vpc_config {
     subnet_ids         = aws_subnet.tera_subnet[*].id
@@ -100,8 +107,8 @@ resource "aws_eks_cluster" "tera_cluster" {
 resource "aws_eks_node_group" "tera_node_group" {
   cluster_name    = aws_eks_cluster.tera_cluster.name
   node_group_name = "tera-node-group"
-  node_role_arn   = aws_iam_role.tera_node_group_role.arn
-  subnet_ids      = aws_subnet.tera_subnet[*].id
+  node_role_arn   = "arn:aws:iam::701501441062:role/Teraform_EKS"  # Explicitly referencing your manually created role
+  subnet_ids      = [aws_subnet.tera_subnet[0].id, aws_subnet.tera_subnet[1].id]
 
   scaling_config {
     desired_size = 3
@@ -109,83 +116,35 @@ resource "aws_eks_node_group" "tera_node_group" {
     min_size     = 3
   }
 
-  instance_types = ["t2.large"]
+  instance_types = ["t3.medium"]
 
   remote_access {
-    ec2_ssh_key = var.ssh_key_name
+    ec2_ssh_key              = var.ssh_key_name
     source_security_group_ids = [aws_security_group.tera_node_sg.id]
   }
 }
 
-resource "aws_iam_role" "tera_cluster_role" {
-  name = "tera-cluster-role"
-
-  assume_role_policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "eks.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
-}
-
-resource "aws_iam_role_policy_attachment" "tera_cluster_role_policy" {
-  role       = aws_iam_role.tera_cluster_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-resource "aws_iam_role" "tera_node_group_role" {
-  name = "tera-node-group-role"
-
-  assume_role_policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
-}
-
-resource "aws_iam_role_policy_attachment" "eks_admin_role_admin" {
-  role       = "Teraform_EKS"
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "eks_admin_role_cluster" {
-  role       = "Teraform_EKS"
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-resource "aws_iam_role_policy_attachment" "eks_admin_role_service" {
-  role       = "Teraform_EKS"
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
-}
-
-resource "aws_iam_role_policy_attachment" "eks_admin_role_worker" {
-  role       = "Teraform_EKS"
+resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
+  role       = "Teraform_EKS"  # Referencing your manually created role directly
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
-  role       = "Teraform_EKS"
+  role       = "Teraform_EKS"  # Referencing your manually created role directly
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_registry_policy" {
-  role       = "Teraform_EKS"
+  role       = "Teraform_EKS"  # Referencing your manually created role directly
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
+
+resource "aws_security_group_rule" "eks_allow_nodes" {
+  type                        = "ingress"
+  from_port                   = 0
+  to_port                     = 65535
+  protocol                    = "tcp"
+  security_group_id           = aws_security_group.tera_cluster_sg.id
+  source_security_group_id    = aws_security_group.tera_node_sg.id
+}
+
