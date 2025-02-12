@@ -82,10 +82,15 @@ resource "aws_security_group" "eks_sg" {
   }
 }
 
-# EKS Cluster - Main EKS Cluster resource using the pre-existing IAM role ARN
+# Data source to find the IAM Role by name
+data "aws_iam_role" "eks_role" {
+  name = "Teraform_EKS"  # IAM role name
+}
+
+# EKS Cluster - Main EKS Cluster resource using the pre-existing IAM role (referenced by role name)
 resource "aws_eks_cluster" "eks_cluster" {
   name     = var.cluster_name
-  role_arn = "arn:aws:iam::701501441062:role/Teraform_EKS"  # Reference to the pre-existing IAM role
+  role_arn = data.aws_iam_role.eks_role.arn  # Reference to the IAM role by ARN (fetched using the role name)
 
   vpc_config {
     subnet_ids         = aws_subnet.eks_subnet[*].id
@@ -97,15 +102,15 @@ resource "aws_eks_cluster" "eks_cluster" {
 
 # Attach Policies to Existing EKS Cluster Role
 resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  role       = "Teraform_EKS"  # Reference to the pre-existing IAM role
+  role       = data.aws_iam_role.eks_role.name  # Reference to the IAM role by name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# EKS Node Group - Worker nodes for your cluster using the pre-existing IAM role ARN
+# EKS Node Group - Worker nodes for your cluster using the pre-existing IAM role (referenced by role name)
 resource "aws_eks_node_group" "eks_node_group" {
   cluster_name    = aws_eks_cluster.eks_cluster.name
   node_group_name = "eks-node-group"
-  node_role_arn   = "arn:aws:iam::701501441062:role/Teraform_EKS"  # Reference to the pre-existing IAM role
+  node_role_arn   = data.aws_iam_role.eks_role.arn  # Reference to the IAM role by ARN (fetched using the role name)
   subnet_ids      = aws_subnet.eks_subnet[*].id
 
   scaling_config {
@@ -121,7 +126,8 @@ resource "aws_eks_node_group" "eks_node_group" {
 
 # Attach Policies to Existing Worker Role
 resource "aws_iam_role_policy_attachment" "eks_worker_policy" {
-  role       = "Teraform_EKS"  # Reference to the pre-existing IAM role
+  role       = data.aws_iam_role.eks_role.name  # Reference to the IAM role by name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
+
 
