@@ -2,6 +2,11 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# Data source to look up the manually created IAM role
+data "aws_iam_role" "terra_role" {
+  role_name = "Terraform_EKS"
+}
+
 resource "aws_vpc" "tera_vpc" {
   cidr_block = "10.0.0.0/16"
 
@@ -96,7 +101,7 @@ resource "aws_security_group" "tera_node_sg" {
 
 resource "aws_eks_cluster" "tera_cluster" {
   name     = "tera-cluster"
-  role_arn = "arn:aws:iam::701501441062:role/Teraform_EKS"  # Explicitly referencing your manually created role
+  role_arn = data.aws_iam_role.terra_role.arn  # Referencing the role ARN dynamically
 
   vpc_config {
     subnet_ids         = aws_subnet.tera_subnet[*].id
@@ -107,35 +112,35 @@ resource "aws_eks_cluster" "tera_cluster" {
 resource "aws_eks_node_group" "tera_node_group" {
   cluster_name    = aws_eks_cluster.tera_cluster.name
   node_group_name = "tera-node-group"
-  node_role_arn   = "arn:aws:iam::701501441062:role/Teraform_EKS"  # Explicitly referencing your manually created role
+  node_role_arn   = data.aws_iam_role.terra_role.arn  # Referencing the role ARN dynamically
   subnet_ids      = [aws_subnet.tera_subnet[0].id, aws_subnet.tera_subnet[1].id]
 
   scaling_config {
-    desired_size = 3
+    desired_size = 2
     max_size     = 3
-    min_size     = 3
+    min_size     = 1
   }
 
   instance_types = ["t3.medium"]
 
   remote_access {
-    ec2_ssh_key              = var.ssh_key_name
+    ec2_ssh_key              = var.ssh_key_name  # Ensure the variable 'ssh_key_name' is defined
     source_security_group_ids = [aws_security_group.tera_node_sg.id]
   }
 }
 
 resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
-  role       = "Teraform_EKS"  # Referencing your manually created role directly
+  role       = data.aws_iam_role.terra_role.name  # Referencing the role name dynamically
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
-  role       = "Teraform_EKS"  # Referencing your manually created role directly
+  role       = data.aws_iam_role.terra_role.name  # Referencing the role name dynamically
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_registry_policy" {
-  role       = "Teraform_EKS"  # Referencing your manually created role directly
+  role       = data.aws_iam_role.terra_role.name  # Referencing the role name dynamically
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
@@ -144,7 +149,8 @@ resource "aws_security_group_rule" "eks_allow_nodes" {
   from_port                   = 0
   to_port                     = 65535
   protocol                    = "tcp"
-  security_group_id           = aws_security_group.tera_cluster_sg.id
-  source_security_group_id    = aws_security_group.tera_node_sg.id
+  security_group_id           = aws_security_group.tera_node_sg.id
+  source_security_group_id    = aws_security_group.tera_cluster_sg.id
 }
+
 
