@@ -1,15 +1,23 @@
-output "cluster_id" {
-  value = aws_eks_cluster.tera_cluster.id
+# Output the EKS Cluster Name
+output "EKS_TF" {
+  description = "The name of the EKS cluster"
+  value       = aws_eks_cluster.eks_cluster.name
 }
 
-output "node_group_id" {
-  value = aws_eks_node_group.tera_node_group.id
+# Output the EKS Cluster Endpoint
+output "eks_cluster_endpoint" {
+  description = "The endpoint for the EKS cluster"
+  value       = aws_eks_cluster.eks_cluster.endpoint
 }
 
-output "vpc_id" {
-  value = aws_vpc.tera_vpc.id
+# Output the EKS Cluster ARN
+output "eks_cluster_arn" {
+  description = "The ARN of the EKS cluster"
+  value       = aws_eks_cluster.eks_cluster.arn
 }
 
-output "subnet_ids" {
-  value = aws_subnet.tera_subnet[*].id
+# Output the EKS Worker Nodes Role ARN
+output "eks_worker_role_arn" {
+  description = "The ARN of the EKS worker node role"
+  value       = aws_iam_role.eks_worker_role.arn
 }
