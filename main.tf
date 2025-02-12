@@ -4,7 +4,7 @@ provider "aws" {
 
 # Data source to look up the manually created IAM role
 data "aws_iam_role" "terra_role" {
-  role_name = "Terraform_EKS"
+  role_name = "Teraform_EKS"
 }
 
 resource "aws_vpc" "tera_vpc" {
