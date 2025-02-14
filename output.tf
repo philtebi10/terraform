@@ -1,23 +1,30 @@
-# Output the EKS Cluster Name
-output "EKS_TF" {
-  description = "The name of the EKS cluster"
-  value       = aws_eks_cluster.eks_cluster.name
+# outputs.tf
+output "eks_cluster_id" {
+  description = "The ID of the EKS cluster"
+  value       = aws_eks_cluster.eks.id
 }
 
-# Output the EKS Cluster Endpoint
 output "eks_cluster_endpoint" {
-  description = "The endpoint for the EKS cluster"
-  value       = aws_eks_cluster.eks_cluster.endpoint
+  description = "The endpoint of the EKS cluster"
+  value       = aws_eks_cluster.eks.endpoint
 }
 
-# Output the EKS Cluster ARN
-output "eks_cluster_arn" {
-  description = "The ARN of the EKS cluster"
-  value       = aws_eks_cluster.eks_cluster.arn
+output "eks_node_group_id" {
+  description = "The ID of the EKS node group"
+  value       = aws_eks_node_group.eks_nodes.id
 }
 
-# Output the EKS Worker Nodes Role ARN
-output "eks_worker_role_arn" {
-  description = "The ARN of the EKS worker node role"
-  value       = aws_iam_role.eks_worker_role.arn
+output "vpc_id" {
+  description = "The ID of the created VPC"
+  value       = aws_vpc.eks_vpc.id
+}
+
+output "security_group_id" {
+  description = "The ID of the security group assigned to EKS"
+  value       = aws_security_group.eks_sg.id
+}
+
+output "kms_key_arn" {
+  description = "KMS key ARN for EKS secrets encryption"
+  value       = aws_kms_key.eks_kms.arn
 }
