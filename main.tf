@@ -1,45 +1,46 @@
-# Provider Configuration
+# main.tf
 provider "aws" {
-  region = var.aws_region  # AWS region passed as a variable
+  region = var.aws_region
 }
 
-# VPC (Virtual Private Cloud) - Networking for the EKS Cluster
-resource "aws_vpc" "eks_vpc" {
-  cidr_block = "10.0.0.0/16"
+# Fetch IAM role dynamically
+data "aws_iam_role" "eks_role" {
+  name = "Terraform_EKS"
+}
 
+# Create a VPC
+resource "aws_vpc" "eks_vpc" {
+  cidr_block = var.vpc_cidr
   enable_dns_support = true
   enable_dns_hostnames = true
-
   tags = {
     Name = "eks-vpc"
   }
 }
 
-# Subnets - Required for EKS worker nodes
-resource "aws_subnet" "eks_subnet" {
-  count = 2  # Creating 2 subnets in different availability zones
-
-  vpc_id            = aws_vpc.eks_vpc.id
-  cidr_block        = cidrsubnet(aws_vpc.eks_vpc.cidr_block, 8, count.index)
-  availability_zone = element(data.aws_availability_zones.available.names, count.index)
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "eks-subnet-${count.index}"
-  }
+# Enable VPC Flow Logs for monitoring
+resource "aws_flow_log" "eks_vpc_flow_log" {
+  log_destination      = aws_cloudwatch_log_group.eks_vpc_logs.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id              = aws_vpc.eks_vpc.id
 }
 
-# Internet Gateway - Required for EKS to communicate with the internet
+resource "aws_cloudwatch_log_group" "eks_vpc_logs" {
+  name = "/aws/eks/vpc-flow-logs"
+  retention_in_days = 30
+}
+
+# Create an internet gateway
 resource "aws_internet_gateway" "eks_igw" {
   vpc_id = aws_vpc.eks_vpc.id
-
   tags = {
     Name = "eks-igw"
   }
 }
 
-# Route Table - To route internet traffic
-resource "aws_route_table" "eks_route_table" {
+# Create a route table
+resource "aws_route_table" "eks_rt" {
   vpc_id = aws_vpc.eks_vpc.id
 
   route {
@@ -52,28 +53,28 @@ resource "aws_route_table" "eks_route_table" {
   }
 }
 
-# Route Table Association - Associate subnets with route table
-resource "aws_route_table_association" "eks_route_association" {
-  count          = 2
-  subnet_id      = aws_subnet.eks_subnet[count.index].id
-  route_table_id = aws_route_table.eks_route_table.id
+# Associate subnets with route table
+resource "aws_route_table_association" "eks_rta" {
+  for_each = toset(var.subnet_ids)
+  subnet_id      = each.value
+  route_table_id = aws_route_table.eks_rt.id
 }
 
-# Security Group - For EKS Cluster
+# Create security group for EKS with restricted access
 resource "aws_security_group" "eks_sg" {
   vpc_id = aws_vpc.eks_vpc.id
 
   ingress {
-    from_port   = 0
-    to_port     = 65535
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Open for all incoming traffic, adjust for security best practices
+    cidr_blocks = var.allowed_ingress_cidrs
   }
 
   egress {
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"  # Allow all outbound traffic
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -82,52 +83,72 @@ resource "aws_security_group" "eks_sg" {
   }
 }
 
-# Data source to find the IAM Role by name
-data "aws_iam_role" "eks_role" {
-  name = "Teraform_EKS"  # IAM role name
+# Enable encryption for Kubernetes secrets
+resource "aws_kms_key" "eks_kms" {
+  description             = "KMS key for EKS secrets encryption"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
 }
 
-# EKS Cluster - Main EKS Cluster resource using the pre-existing IAM role (referenced by role name)
-resource "aws_eks_cluster" "eks_cluster" {
+resource "aws_eks_cluster" "eks" {
   name     = var.cluster_name
-  role_arn = data.aws_iam_role.eks_role.arn  # Reference to the IAM role by ARN (fetched using the role name)
+  role_arn = data.aws_iam_role.eks_role.arn
 
   vpc_config {
-    subnet_ids         = aws_subnet.eks_subnet[*].id
+    subnet_ids = var.subnet_ids
     security_group_ids = [aws_security_group.eks_sg.id]
   }
 
-  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
-}
-
-# Attach Policies to Existing EKS Cluster Role
-resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  role       = data.aws_iam_role.eks_role.name  # Reference to the IAM role by name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-# EKS Node Group - Worker nodes for your cluster using the pre-existing IAM role (referenced by role name)
-resource "aws_eks_node_group" "eks_node_group" {
-  cluster_name    = aws_eks_cluster.eks_cluster.name
-  node_group_name = "eks-node-group"
-  node_role_arn   = data.aws_iam_role.eks_role.arn  # Reference to the IAM role by ARN (fetched using the role name)
-  subnet_ids      = aws_subnet.eks_subnet[*].id
-
-  scaling_config {
-    desired_size = 2
-    max_size     = 3
-    min_size     = 1
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks_kms.arn
+    }
+    resources = ["secrets"]
   }
-
-  instance_types = ["t3.medium"]
-
-  depends_on = [aws_eks_cluster.eks_cluster]
 }
 
-# Attach Policies to Existing Worker Role
-resource "aws_iam_role_policy_attachment" "eks_worker_policy" {
-  role       = data.aws_iam_role.eks_role.name  # Reference to the IAM role by name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+resource "aws_eks_node_group" "eks_nodes" {
+  cluster_name  = aws_eks_cluster.eks.name
+  node_group_name = var.node_group_name
+  node_role_arn = data.aws_iam_role.eks_role.arn
+  subnet_ids    = var.subnet_ids
+  instance_types = var.instance_types
+  scaling_config {
+    desired_size = var.desired_capacity
+    max_size     = var.max_capacity
+    min_size     = var.min_capacity
+  }
+}
+
+# Deploy AWS Load Balancer Controller
+resource "kubernetes_service_account" "alb_controller" {
+  metadata {
+    name      = "aws-load-balancer-controller"
+    namespace = "kube-system"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = data.aws_iam_role.eks_role.arn
+    }
+  }
+}
+
+resource "helm_release" "aws_load_balancer_controller" {
+  name       = "aws-load-balancer-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  set {
+    name  = "clusterName"
+    value = var.cluster_name
+  }
+  set {
+    name  = "serviceAccount.create"
+    value = "false"
+  }
+  set {
+    name  = "serviceAccount.name"
+    value = kubernetes_service_account.alb_controller.metadata[0].name
+  }
+}
 }
 
 
